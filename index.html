@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Stoic Wisdom</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Configure Tailwind for Inter font -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        /* Simple spinning loader */
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #3498db; /* Blue */
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans h-full flex items-center justify-center p-4 py-8">
+
+    <div class="w-full max-w-2xl bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 md:p-12">
+        <h1 class="text-3xl md:text-4xl font-bold text-center text-blue-600 dark:text-blue-400 mb-6">
+            Daily Stoic Wisdom
+        </h1>
+
+        <!-- Quote Section -->
+        <div class="mb-8">
+            <blockquote id="quote-text" class="text-xl md:text-2xl italic text-center text-gray-700 dark:text-gray-300 mb-4">
+                <!-- Quote will be populated here -->
+            </blockquote>
+            <p id="quote-author" class="text-right text-lg font-medium text-gray-500 dark:text-gray-400">
+                <!-- Author will be populated here -->
+            </p>
+        </div>
+
+        <!-- Divider -->
+        <hr class="border-gray-200 dark:border-gray-700 my-8">
+
+        <!-- Summary Section -->
+        <div id="summary-container">
+            <h2 class="text-2xl font-semibold text-gray-800 dark:text-gray-200 mb-4">
+                Modern Application
+            </h2>
+            
+            <!-- Loading State -->
+            <div id="loading-state" class="flex flex-col items-center justify-center space-y-4">
+                <div class="loader"></div>
+                <p class="text-gray-500 dark:text-gray-400">Generating today's wisdom... this may take a moment.</p>
+            </div>
+
+            <!-- Error State -->
+            <div id="error-state" class="hidden p-4 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded-lg text-red-700 dark:text-red-200">
+                <p class="font-bold">Error</p>
+                <p id="error-message">Could not retrieve the summary. Please try refreshing the page.</p>
+            </div>
+
+            <!-- Content State -->
+            <div id="summary-content" class="hidden text-base md:text-lg text-gray-700 dark:text-gray-300 space-y-4 leading-relaxed whitespace-pre-line">
+                <!-- Summary will be populated here -->
+            </div>
+        </div>
+
+        <!-- NEW: Divider for new tools -->
+        <hr id="tools-divider" class="border-gray-200 dark:border-gray-700 my-8 hidden">
+
+        <!-- NEW: Reflection Tools Section -->
+        <div id="reflection-tools" class="hidden">
+            <h2 class="text-2xl font-semibold text-gray-800 dark:text-gray-200 mb-6">
+                Tools for Reflection
+            </h2>
+
+            <!-- Feature 1: Journal Prompt -->
+            <div class="mb-6">
+                <button id="journal-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span>✨ Get Journal Prompt</span>
+                </button>
+                <div id="journal-loader" class="hidden flex justify-center mt-4">
+                    <div class="loader" style="width: 30px; height: 30px; border-width: 3px;"></div>
+                </div>
+                <div id="journal-error" class="hidden mt-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-200 rounded-lg"></div>
+                <div id="journal-content" class="hidden mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg italic text-gray-800 dark:text-gray-200 whitespace-pre-line">
+                    <!-- Journal prompt will appear here -->
+                </div>
+            </div>
+
+            <!-- Feature 2: Ask a Question -->
+            <div>
+                <button id="ask-btn" class="w-full bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100 font-bold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center space-x-2">
+                    <span>✨ Ask a Follow-up Question</span>
+                </button>
+                
+                <form id="question-form" class="hidden space-y-4 mt-4">
+                    <label for="question-input" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Your Question:</label>
+                    <input type="text" id="question-input" class="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., How does this apply to family?">
+                    <button id="submit-question-btn" type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed">
+                        <span>Submit Question</span>
+                    </button>
+                </form>
+
+                <div id="question-loader" class="hidden flex justify-center mt-4">
+                    <div class="loader" style="width: 30px; height: 30px; border-width: 3px;"></div>
+                </div>
+                <div id="question-error" class="hidden mt-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-200 rounded-lg"></div>
+                <div id="question-answer" class="hidden mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg text-gray-800 dark:text-gray-200 whitespace-pre-line">
+                    <!-- Question answer will appear here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- Configuration ---
+
+        // A list of Stoic quotes. The script will pick one based on the day of the year.
+        const STOIC_QUOTES = [
+            { text: "The happiness of your life depends upon the quality of your thoughts.", author: "Marcus Aurelius" },
+            { text: "We suffer more often in imagination than in reality.", author: "Seneca" },
+            { text: "It's not what happens to you, but how you react to it that matters.", author: "Epictetus" },
+            { text: "The best revenge is to be unlike him who performed the injury.", author: "Marcus Aurelius" },
+            { text: "He who fears death will never do anything worthy of a man who is alive.", author: "Seneca" },
+            { text: "First say to yourself what you would be; and then do what you have to do.", author: "Epictetus" },
+            { text: "You have power over your mind – not outside events. Realize this, and you will find strength.", author: "Marcus Aurelius" },
+            { text: "Luck is what happens when preparation meets opportunity.", author: "Seneca" },
+            { text: "Wealth consists not in having great possessions, but in having few wants.", author: "Epictetus" },
+            { text: "Waste no more time arguing about what a good man should be. Be one.", author: "Marcus Aurelius" },
+            { text: "Difficulties strengthen the mind, as labor does the body.", author: "Seneca" },
+            { text: "No man is free who is not master of himself.", author: "Epictetus" },
+            { text: "If you are distressed by anything external, the pain is not due to the thing itself, but to your estimate of it; and this you have the power to revoke at any moment.", author: "Marcus Aurelius" },
+            { text: "It is not the man who has too little, but the man who craves more, that is poor.", author: "Seneca" },
+            { text: "We cannot choose our external circumstances, but we can always choose how we respond to them.", author: "Epictetus" }
+        ];
+
+        // Gemini API Configuration
+        const API_KEY = ""; 
+        const MODEL_NAME = "gemini-2.5-flash-preview-09-2025";
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
+        
+        // Module-level variable to store the quote
+        let currentDailyQuote = null;
+
+        // --- Helper Functions ---
+
+        /**
+         * Calculates the day of the year (1-366).
+         * @returns {number} The current day of the year.
+         */
+        function getDayOfYear() {
+            const now = new Date();
+            const start = new Date(now.getFullYear(), 0, 0);
+            const diff = now - start;
+            const oneDay = 1000 * 60 * 60 * 24;
+            return Math.floor(diff / oneDay);
+        }
+
+        /**
+         * Retries a fetch request with exponential backoff.
+         * @param {function} fetchCall - A function that returns the fetch promise.
+         * @param {number} maxRetries - Maximum number of retries.
+         * @returns {Promise<Response>}
+         */
+        async function retryWithExponentialBackoff(fetchCall, maxRetries = 5) {
+            let delay = 1000; // 1 second
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetchCall();
+                    if (response.ok) {
+                        return response;
+                    }
+                    if (response.status >= 400 && response.status < 500) {
+                        throw new Error(`Client error: ${response.status} ${response.statusText}`);
+                    }
+                } catch (error) {
+                    if (i === maxRetries - 1) throw error;
+                }
+                await new Promise(resolve => setTimeout(resolve, delay * (2 ** i)));
+            }
+            throw new Error("Max retries reached");
+        }
+
+        /**
+         * Generic function to call the Gemini API
+         * @param {string} systemPrompt - The system instruction
+         * @param {string} userQuery - The user's prompt
+         * @returns {Promise<string>} The generated text
+         */
+        async function callGeminiAPI(systemPrompt, userQuery) {
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+                generationConfig: {
+                    temperature: 0.7,
+                    topK: 1,
+                    topP: 1,
+                    maxOutputTokens: 1024,
+                }
+            };
+
+            const fetchCall = () => fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            try {
+                const response = await retryWithExponentialBackoff(fetchCall);
+                const result = await response.json();
+                
+                const candidate = result.candidates?.[0];
+
+                if (candidate?.finishReason && candidate.finishReason !== "STOP") {
+                    console.error("API call finished with reason:", candidate.finishReason, candidate.safetyRatings);
+                    throw new Error(`The API stopped generating for an unexpected reason: ${candidate.finishReason}`);
+                }
+
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    return candidate.content.parts[0].text;
+                } else {
+                    console.error("Invalid API response structure:", result);
+                    throw new Error(result.error?.message || "The API returned an unexpected response (content may be missing).");
+                }
+            } catch (error) {
+                console.error("Error calling Gemini API:", error);
+                throw error; // Re-throw to be handled by the caller
+            }
+        }
+
+        /**
+         * Fetches the Stoic summary from the Gemini API.
+         * @param {object} quote - The quote object ({ text, author }).
+         * @returns {Promise<string>} The generated summary text.
+         */
+        async function getStoicSummary(quote) {
+            const systemPrompt = "You are a philosopher skilled in Stoicism and modern psychology.";
+            const userQuery = `Here is a stoic quote: "${quote.text}" - ${quote.author}.
+            
+Please provide a summary of how this quote applies to the world today.
+The summary MUST follow these strict rules:
+1.  It must contain exactly two paragraphs.
+2.  Each paragraph must contain exactly two sentences.
+3.  The content should focus on modern, everyday challenges (like work stress or social media).
+4.  Do not include any greeting or text other than the summary.`;
+            
+            // Use the generic API caller
+            return callGeminiAPI(systemPrompt, userQuery);
+        }
+
+        /**
+         * Updates the DOM with the main summary.
+         * @param {string} summary - The generated summary.
+         */
+        function displaySummary(summary) {
+            // Populate summary
+            document.getElementById('summary-content').textContent = summary;
+
+            // Show content and hide loader
+            document.getElementById('loading-state').classList.add('hidden');
+            document.getElementById('summary-content').classList.remove('hidden');
+
+            // Show the reflection tools
+            document.getElementById('tools-divider').classList.remove('hidden');
+            document.getElementById('reflection-tools').classList.remove('hidden');
+        }
+
+        /**
+         * Displays an error message in the main summary UI.
+         * @param {Error} error - The error object.
+         */
+        function displayError(error) {
+            document.getElementById('error-message').textContent = `Failed to generate wisdom: ${error.message}. Please try refreshing the page.`;
+            document.getElementById('loading-state').classList.add('hidden');
+            document.getElementById('error-state').classList.remove('hidden');
+        }
+
+        // --- New Feature Handlers ---
+
+        /**
+         * Handles the "Get Journal Prompt" button click.
+         */
+        async function handleJournalPrompt() {
+            if (!currentDailyQuote) return;
+
+            const btn = document.getElementById('journal-btn');
+            const container = document.getElementById('journal-content');
+            const loader = document.getElementById('journal-loader');
+            const errorContainer = document.getElementById('journal-error');
+
+            btn.disabled = true;
+            loader.classList.remove('hidden');
+            container.classList.add('hidden');
+            errorContainer.classList.add('hidden');
+
+            const systemPrompt = "You are a thoughtful and insightful journaling guide.";
+            const userQuery = `Based on the stoic quote "${currentDailyQuote.text}" by ${currentDailyQuote.author}, provide a single, short, and concise journal prompt. The prompt should be a direct question to help someone reflect on the quote. Start the prompt directly, with no preamble.`;
+
+            try {
+                const promptText = await callGeminiAPI(systemPrompt, userQuery);
+                container.textContent = promptText;
+                container.classList.remove('hidden');
+            } catch (error) {
+                errorContainer.textContent = `Error generating prompt: ${error.message}`;
+                errorContainer.classList.remove('hidden');
+            } finally {
+                loader.classList.add('hidden');
+                btn.disabled = false;
+            }
+        }
+
+        /**
+         * Handles the "Ask a Question" button click (reveals the form).
+         */
+        function handleAskQuestionReveal() {
+            document.getElementById('ask-btn').classList.add('hidden');
+            document.getElementById('question-form').classList.remove('hidden');
+            document.getElementById('question-input').focus();
+        }
+
+        /**
+         * Handles the submission of the follow-up question.
+         */
+        async function handleSubmitQuestion(event) {
+            event.preventDefault(); // Prevent form from submitting
+            if (!currentDailyQuote) return;
+
+            const btn = document.getElementById('submit-question-btn');
+            const input = document.getElementById('question-input');
+            const container = document.getElementById('question-answer');
+            const loader = document.getElementById('question-loader');
+            const errorContainer = document.getElementById('question-error');
+
+            const questionText = input.value.trim();
+            if (!questionText) {
+                errorContainer.textContent = "Please enter a question.";
+                errorContainer.classList.remove('hidden');
+                return;
+            }
+
+            btn.disabled = true;
+            input.disabled = true;
+            loader.classList.remove('hidden');
+            container.classList.add('hidden');
+            errorContainer.classList.add('hidden');
+
+            const systemPrompt = "You are a source of Stoic wisdom. Respond to the user's question from a Stoic perspective, without using personal pronouns like 'I' or addressing the user with terms like 'my friend'.";
+            const userQuery = `A person is reflecting on the quote "${currentDailyQuote.text}" by ${currentDailyQuote.author}. They ask:
+            
+"${questionText}"
+
+Provide a concise, helpful answer based on Stoic principles. The response should be wise and direct, avoiding any personal persona or conversational phrases.`;
+
+            try {
+                const answerText = await callGeminiAPI(systemPrompt, userQuery);
+                container.textContent = answerText;
+                container.classList.remove('hidden');
+            } catch (error) {
+                errorContainer.textContent = `Error getting answer: ${error.message}`;
+                errorContainer.classList.remove('hidden');
+            } finally {
+                loader.classList.add('hidden');
+                btn.disabled = false;
+                input.disabled = false;
+            }
+        }
+
+        // --- Main Execution ---
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Register new event listeners
+            document.getElementById('journal-btn').addEventListener('click', handleJournalPrompt);
+            document.getElementById('ask-btn').addEventListener('click', handleAskQuestionReveal);
+            document.getElementById('question-form').addEventListener('submit', handleSubmitQuestion);
+
+            try {
+                // 1. Get the daily quote
+                const dayIndex = getDayOfYear();
+                currentDailyQuote = STOIC_QUOTES[dayIndex % STOIC_QUOTES.length]; // Store in module variable
+
+                // 2. Display the quote text immediately
+                document.getElementById('quote-text').textContent = `"${currentDailyQuote.text}"`;
+                document.getElementById('quote-author').textContent = `– ${currentDailyQuote.author}`;
+
+                // 3. Fetch the summary from the Gemini API
+                const summary = await getStoicSummary(currentDailyQuote);
+
+                // 4. Display the summary
+                displaySummary(summary);
+
+            } catch (error) {
+                // 5. Handle any errors during the process
+                displayError(error);
+            }
+        });
+    </script>
+</body>
+</html>
+
