@@ -1,198 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Stoic Wisdom</title>
-    <!-- Load Firebase SDKs -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // --- MANDATORY Firebase Initialization ---
-        // These variables are provided by the hosting environment.
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { /* Placeholder if needed */ };
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        
-        setLogLevel('debug'); // Enable Firestore logging
-        
-        // Global variables for Firebase access
-        window.db = db;
-        window.auth = auth;
-        window.currentUserId = null;
-        window.currentAppId = appId;
-        window.userProfile = null; // Stores loaded profile data
-
-        // Global document elements references
-        window.profileForm = null;
-        window.profileNameInput = null;
-        window.profileAgeInput = null;
-        window.profileCareerInput = null;
-        window.profileStatus = null;
-        
-        // --- Authentication and Profile Loading ---
-
-        /**
-         * Signs in the user, handles auth state, and triggers profile load.
-         */
-        async function initializeAuthAndDatabase() {
-            try {
-                // Set persistence to session storage so the anonymous user persists across tabs/refreshes
-                await setPersistence(auth, browserSessionPersistence);
-                
-                // Use a promise wrapper for onAuthStateChanged to ensure we wait for the initial state
-                await new Promise(resolve => {
-                    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-                        if (user) {
-                            window.currentUserId = user.uid;
-                            document.getElementById('user-id-display').textContent = user.uid;
-                            console.log("User authenticated with UID:", user.uid);
-                            await loadUserProfile(user.uid);
-                            resolve();
-                        } else {
-                            // If no user, sign in anonymously or with custom token
-                            if (initialAuthToken) {
-                                await signInWithCustomToken(auth, initialAuthToken);
-                            } else {
-                                await signInAnonymously(auth);
-                            }
-                        }
-                        // Stop listening after the first successful resolution of user state
-                        if (user || initialAuthToken === null) {
-                            unsubscribe();
-                        }
-                    });
-                });
-
-            } catch (error) {
-                console.error("Firebase Auth or Firestore initialization error:", error);
-                document.getElementById('error-message').textContent = `Firebase Setup Error: ${error.message}`;
-                document.getElementById('loading-state').classList.add('hidden');
-                document.getElementById('error-state').classList.remove('hidden');
-            }
-        }
-
-        /**
-         * Loads the user profile from Firestore.
-         * @param {string} userId - The authenticated user's ID.
-         */
-        async function loadUserProfile(userId) {
-            // Path: /artifacts/{appId}/users/{userId}/profile/data
-            const profileRef = doc(db, "artifacts", window.currentAppId, "users", userId, "profile", "data");
-            
-            try {
-                const docSnap = await getDoc(profileRef);
-                if (docSnap.exists()) {
-                    window.userProfile = docSnap.data();
-                    console.log("Profile loaded:", window.userProfile);
-                    // Populate form fields with loaded data
-                    window.profileNameInput.value = window.userProfile.firstName || '';
-                    window.profileAgeInput.value = window.userProfile.age || '';
-                    window.profileCareerInput.value = window.userProfile.careerField || '';
-                    window.profileStatus.textContent = 'Profile Loaded';
-                    window.profileStatus.classList.remove('text-yellow-600', 'text-red-600');
-                    window.profileStatus.classList.add('text-green-600');
-                } else {
-                    console.log("No profile found, initializing empty profile.");
-                    window.userProfile = null;
-                    window.profileStatus.textContent = 'No Profile Set';
-                    window.profileStatus.classList.add('text-yellow-600');
-                }
-            } catch (error) {
-                console.error("Error loading profile:", error);
-                window.profileStatus.textContent = 'Error Loading Profile';
-                window.profileStatus.classList.add('text-red-600');
-            }
-
-            // After auth and profile are ready, start the main app logic
-            // FIX: Call the global version of initMainApp defined in the second script
-            if (window.initMainApp) {
-                window.initMainApp();
-            } else {
-                console.error("window.initMainApp is not yet defined.");
-            }
-        }
-
-        /**
-         * Saves the user profile to Firestore.
-         * @param {Event} event - The form submit event.
-         */
-        window.saveUserProfile = async function (event) {
-            event.preventDefault();
-            
-            const firstName = window.profileNameInput.value.trim();
-            const age = parseInt(window.profileAgeInput.value.trim(), 10);
-            const careerField = window.profileCareerInput.value.trim();
-
-            if (!window.currentUserId) {
-                window.profileStatus.textContent = 'Error: Not Authenticated';
-                window.profileStatus.classList.add('text-red-600');
-                return;
-            }
-
-            // Simple validation
-            if (!firstName || isNaN(age) || age < 1 || !careerField) {
-                 window.profileStatus.textContent = 'Please fill all fields with valid data.';
-                 window.profileStatus.classList.add('text-red-600');
-                 return;
-            }
-
-            const profileData = { firstName, age, careerField, lastUpdated: new Date().toISOString() };
-            const profileRef = doc(db, "artifacts", window.currentAppId, "users", window.currentUserId, "profile", "data");
-
-            try {
-                await setDoc(profileRef, profileData);
-                window.userProfile = profileData;
-                window.profileStatus.textContent = 'Profile Saved Successfully! Reloading Wisdom...';
-                window.profileStatus.classList.remove('text-red-600', 'text-yellow-600');
-                window.profileStatus.classList.add('text-green-600');
-                
-                // Re-run the summary generation with the new profile data
-                // FIX: Call the global version of generateDailyWisdom defined in the second script
-                if (window.generateDailyWisdom) {
-                    await window.generateDailyWisdom(); 
-                } else {
-                    console.error("window.generateDailyWisdom is not yet defined.");
-                }
-
-            } catch (error) {
-                console.error("Error saving profile:", error);
-                window.profileStatus.textContent = `Error Saving: ${error.message}`;
-                window.profileStatus.classList.add('text-red-600');
-            }
-        }
-        
-        // Removed the incorrect global exposure here: window.generateDailyWisdom = generateDailyWisdom;
-
-        // Call initialization right away
-        window.addEventListener('load', () => {
-             // Get references to elements
-            window.profileForm = document.getElementById('profile-form');
-            window.profileNameInput = document.getElementById('profile-name');
-            window.profileAgeInput = document.getElementById('profile-age');
-            window.profileCareerInput = document.getElementById('profile-career');
-            window.profileStatus = document.getElementById('profile-status');
-
-            // Attach form handler
-            if (window.profileForm) {
-                window.profileForm.addEventListener('submit', window.saveUserProfile);
-            }
-
-            // Start authentication flow
-            initializeAuthAndDatabase();
-        });
-
-
-    </script>
-
+    <title>Daily Stoicism Quote</title>
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Configure Tailwind for Inter font -->
@@ -202,7 +13,6 @@
                 extend: {
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
-                        serif: ['Georgia', 'serif'], // Added serif for quote
                     },
                 },
             },
@@ -225,41 +35,17 @@
     </style>
 </head>
 <body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans min-h-screen flex justify-center p-4 py-8">
-
     <div class="w-full max-w-2xl bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 md:p-12">
         <h1 class="text-3xl md:text-4xl font-bold text-center text-blue-600 dark:text-blue-400 mb-6">
             Daily Stoic Wisdom
         </h1>
 
-        <!-- Profile Section -->
-        <div class="mb-8 p-4 border border-2 border-indigo-200 dark:border-indigo-700 rounded-lg">
-            <h2 class="text-xl font-bold mb-4 text-center">Your Profile (Optional for Personalization)</h2>
-            <p class="text-sm mb-4 text-gray-500 dark:text-gray-400">
-                User ID: <span id="user-id-display" class="font-mono text-xs bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded break-all">Loading...</span> 
-                Status: <span id="profile-status" class="font-semibold text-yellow-600">Initializing...</span>
-            </p>
-            
-            <form id="profile-form" class="space-y-4">
-                <input type="text" id="profile-name" placeholder="First Name" required class="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <div class="flex space-x-4">
-                    <input type="number" id="profile-age" placeholder="Age" required class="w-1/3 p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <input type="text" id="profile-career" placeholder="Career Field (e.g., Software Engineer)" required class="w-2/3 p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
-                    Save Profile & Personalize Wisdom
-                </button>
-            </form>
-        </div>
-        
-        <!-- Divider -->
-        <hr class="border-gray-200 dark:border-gray-700 my-8">
-
         <!-- Quote Section -->
         <div class="mb-8">
-            <blockquote id="quote-text" class="text-xl md:text-2xl italic text-center text-gray-700 dark:text-gray-300 mb-4 font-serif">
+            <blockquote id="quote-text" class="text-xl md:text-2xl italic text-center text-gray-700 dark:text-gray-300 mb-4">
                 <!-- Quote will be populated here -->
             </blockquote>
-            <p id="quote-author" class="text-center text-xl font-bold italic text-gray-700 dark:text-gray-300 font-serif">
+            <p id="quote-author" class="text-xl md:text-2xl italic text-center text-gray-700 dark:text-gray-300 mb-4">
                 <!-- Author will be populated here -->
             </p>
         </div>
@@ -269,7 +55,6 @@
 
         <!-- Summary Section -->
         <div id="summary-container">
-            <!-- Header matching the main title -->
             <h2 class="text-3xl md:text-4xl font-bold text-center text-blue-600 dark:text-blue-400 mb-6">
                 Modern Application
             </h2>
@@ -277,7 +62,7 @@
             <!-- Loading State -->
             <div id="loading-state" class="flex flex-col items-center justify-center space-y-4">
                 <div class="loader"></div>
-                <p class="text-gray-500 dark:text-gray-400">Loading profile and generating today's wisdom...</p>
+                <p class="text-gray-500 text-center dark:text-gray-400">Generating today's wisdom... this may take a moment.</p>
             </div>
 
             <!-- Error State -->
@@ -287,7 +72,7 @@
             </div>
 
             <!-- Content State -->
-            <div id="summary-content" class="hidden text-base md:text-lg text-gray-700 dark:text-gray-300 space-y-4 leading-relaxed whitespace-pre-line">
+            <div id="summary-content" class="hidden text-base md:text-lg text-gray-700 text-center dark:text-gray-300 space-y-4 leading-relaxed whitespace-pre-line">
                 <!-- Summary will be populated here -->
             </div>
         </div>
@@ -297,7 +82,6 @@
 
         <!-- NEW: Reflection Tools Section -->
         <div id="reflection-tools" class="hidden">
-            <!-- Header matching the main title -->
             <h2 class="text-3xl md:text-4xl font-bold text-center text-blue-600 dark:text-blue-400 mb-6">
                 Tools for Reflection
             </h2>
@@ -324,7 +108,7 @@
                 
                 <form id="question-form" class="hidden space-y-4 mt-4">
                     <label for="question-input" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Your Question:</label>
-                    <input type="text" id="question-input" class="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., How can I apply this to my job?">
+                    <input type="text" id="question-input" class="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., How does this apply to family?">
                     <button id="submit-question-btn" type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed">
                         <span>Submit Question</span>
                     </button>
@@ -364,9 +148,8 @@
         ];
 
         // Gemini API Configuration
-        // NOTE: The API_KEY must be a valid, restricted key for the app to function.
-        const API_KEY = ""; // PASTE YOUR ACTUAL SECURED API KEY HERE
-        const MODEL_NAME = "gemini-2.5-flash-preview-09-2025";
+        const API_KEY = "AIzaSyAcOSUPZRv0OvKhO_mIDKeSf9lmLqmodCA"; 
+        const MODEL_NAME = "gemini-2.5-flash-lite-preview-09-2025";
         const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
         
         // Module-level variable to store the quote
@@ -375,7 +158,8 @@
         // --- Helper Functions ---
 
         /**
-         * Calculates the day of the year for quote selection.
+         * Calculates the day of the year (1-366).
+         * @returns {number} The current day of the year.
          */
         function getDayOfYear() {
             const now = new Date();
@@ -387,9 +171,12 @@
 
         /**
          * Retries a fetch request with exponential backoff.
+         * @param {function} fetchCall - A function that returns the fetch promise.
+         * @param {number} maxRetries - Maximum number of retries.
+         * @returns {Promise<Response>}
          */
         async function retryWithExponentialBackoff(fetchCall, maxRetries = 5) {
-            let delay = 1000; 
+            let delay = 1000; // 1 second
             for (let i = 0; i < maxRetries; i++) {
                 try {
                     const response = await fetchCall();
@@ -397,14 +184,10 @@
                         return response;
                     }
                     if (response.status >= 400 && response.status < 500) {
-                        // Check for 403 Forbidden specifically (key restriction error)
-                        if (response.status === 403) {
-                             throw new Error(`Client error: 403 Forbidden. Check your API key restrictions in the Google Cloud Console.`);
-                        }
                         throw new Error(`Client error: ${response.status} ${response.statusText}`);
                     }
                 } catch (error) {
-                    if (error.message.includes('403 Forbidden') || i === maxRetries - 1) throw error;
+                    if (i === maxRetries - 1) throw error;
                 }
                 await new Promise(resolve => setTimeout(resolve, delay * (2 ** i)));
             }
@@ -413,6 +196,9 @@
 
         /**
          * Generic function to call the Gemini API
+         * @param {string} systemPrompt - The system instruction
+         * @param {string} userQuery - The user's prompt
+         * @returns {Promise<string>} The generated text
          */
         async function callGeminiAPI(systemPrompt, userQuery) {
             const payload = {
@@ -458,33 +244,28 @@
         }
 
         /**
-         * Fetches the Stoic summary, personalized if a profile exists.
+         * Fetches the Stoic summary from the Gemini API.
+         * @param {object} quote - The quote object ({ text, author }).
+         * @returns {Promise<string>} The generated summary text.
          */
         async function getStoicSummary(quote) {
             const systemPrompt = "You are a philosopher skilled in Stoicism and modern psychology.";
-            
-            let personalization = "Provide a general summary for any reader.";
-
-            if (window.userProfile && window.userProfile.age && window.userProfile.careerField) {
-                 personalization = `The user is a ${window.userProfile.age} year old person working in the field of ${window.userProfile.careerField}. Please tailor the application to address their specific life stage and career challenges.`;
-            }
-
             const userQuery = `Here is a stoic quote: "${quote.text}" - ${quote.author}.
-            
-${personalization}
             
 Please provide a summary of how this quote applies to the world today.
 The summary MUST follow these strict rules:
 1.  It must contain exactly two paragraphs.
 2.  Each paragraph must contain exactly two sentences.
-3.  The content should focus on modern, everyday challenges.
+3.  The content should focus on modern, everyday challenges (like work stress or social media).
 4.  Do not include any greeting or text other than the summary.`;
             
+            // Use the generic API caller
             return callGeminiAPI(systemPrompt, userQuery);
         }
 
         /**
          * Updates the DOM with the main summary.
+         * @param {string} summary - The generated summary.
          */
         function displaySummary(summary) {
             // Populate summary
@@ -501,6 +282,7 @@ The summary MUST follow these strict rules:
 
         /**
          * Displays an error message in the main summary UI.
+         * @param {Error} error - The error object.
          */
         function displayError(error) {
             document.getElementById('error-message').textContent = `Failed to generate wisdom: ${error.message}. Please try refreshing the page.`;
@@ -598,34 +380,13 @@ Provide a concise, helpful answer based on Stoic principles. The response should
             }
         }
 
-
         // --- Main Execution ---
 
-        /**
-         * Main function to run the app once auth and profile loading is complete.
-         * FIX: Exposed globally
-         */
-        window.initMainApp = async function initMainApp() {
-             // 1. Register event listeners for reflection tools
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Register new event listeners
             document.getElementById('journal-btn').addEventListener('click', handleJournalPrompt);
             document.getElementById('ask-btn').addEventListener('click', handleAskQuestionReveal);
             document.getElementById('question-form').addEventListener('submit', handleSubmitQuestion);
-
-            // 2. Start the wisdom generation
-            await window.generateDailyWisdom();
-        }
-
-        /**
-         * Generates and displays the daily quote and summary.
-         * FIX: Exposed globally
-         */
-        window.generateDailyWisdom = async function generateDailyWisdom() {
-            // Reset state
-            document.getElementById('loading-state').classList.remove('hidden');
-            document.getElementById('error-state').classList.add('hidden');
-            document.getElementById('summary-content').classList.add('hidden');
-            document.getElementById('tools-divider').classList.add('hidden');
-            document.getElementById('reflection-tools').classList.add('hidden');
 
             try {
                 // 1. Get the daily quote
@@ -636,7 +397,7 @@ Provide a concise, helpful answer based on Stoic principles. The response should
                 document.getElementById('quote-text').textContent = `"${currentDailyQuote.text}"`;
                 document.getElementById('quote-author').textContent = `– ${currentDailyQuote.author}`;
 
-                // 3. Fetch the personalized summary from the Gemini API
+                // 3. Fetch the summary from the Gemini API
                 const summary = await getStoicSummary(currentDailyQuote);
 
                 // 4. Display the summary
@@ -646,7 +407,7 @@ Provide a concise, helpful answer based on Stoic principles. The response should
                 // 5. Handle any errors during the process
                 displayError(error);
             }
-        }
+        });
     </script>
 </body>
 </html>
