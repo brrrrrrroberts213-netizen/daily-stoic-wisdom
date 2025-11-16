@@ -1,9 +1,195 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Stoicism Quote</title>
+    <title>Daily Reflection App</title>
+    <!-- Load Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // --- MANDATORY Firebase Initialization ---
+        // These variables are provided by the hosting environment.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { /* Placeholder if needed */ };
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        
+        setLogLevel('debug'); // Enable Firestore logging
+        
+        // Global variables for Firebase access
+        window.db = db;
+        window.auth = auth;
+        window.currentUserId = null;
+        window.currentAppId = appId;
+        window.userProfile = null; // Stores loaded profile data
+
+        // Global document elements references
+        window.profileForm = null;
+        window.profileNameInput = null;
+        window.profileAgeInput = null;
+        window.profileCareerInput = null;
+        window.profileStatus = null;
+        
+        // --- Authentication and Profile Loading ---
+
+        /**
+         * Signs in the user, handles auth state, and triggers profile load.
+         */
+        async function initializeAuthAndDatabase() {
+            try {
+                // Set persistence to session storage so the anonymous user persists across tabs/refreshes
+                await setPersistence(auth, browserSessionPersistence);
+                
+                // Use a promise wrapper for onAuthStateChanged to ensure we wait for the initial state
+                await new Promise(resolve => {
+                    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+                        if (user) {
+                            window.currentUserId = user.uid;
+                            document.getElementById('user-id-display').textContent = user.uid;
+                            console.log("User authenticated with UID:", user.uid);
+                            await loadUserProfile(user.uid);
+                            resolve();
+                        } else {
+                            // If no user, sign in anonymously or with custom token
+                            if (initialAuthToken) {
+                                await signInWithCustomToken(auth, initialAuthToken);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        }
+                        // Stop listening after the first successful resolution of user state
+                        if (user || initialAuthToken === null) {
+                            unsubscribe();
+                        }
+                    });
+                });
+
+            } catch (error) {
+                console.error("Firebase Auth or Firestore initialization error:", error);
+                document.getElementById('error-message').textContent = `Firebase Setup Error: ${error.message}`;
+                document.getElementById('loading-state').classList.add('hidden');
+                document.getElementById('error-state').classList.remove('hidden');
+            }
+        }
+
+        /**
+         * Loads the user profile from Firestore.
+         * @param {string} userId - The authenticated user's ID.
+         */
+        async function loadUserProfile(userId) {
+            // Path: /artifacts/{appId}/users/{userId}/profile/data
+            const profileRef = doc(db, "artifacts", window.currentAppId, "users", userId, "profile", "data");
+            
+            try {
+                const docSnap = await getDoc(profileRef);
+                if (docSnap.exists()) {
+                    window.userProfile = docSnap.data();
+                    console.log("Profile loaded:", window.userProfile);
+                    // Populate form fields with loaded data
+                    window.profileNameInput.value = window.userProfile.firstName || '';
+                    window.profileAgeInput.value = window.userProfile.age || '';
+                    window.profileCareerInput.value = window.userProfile.careerField || '';
+                    window.profileStatus.textContent = 'Profile Loaded';
+                    window.profileStatus.classList.remove('text-yellow-600', 'text-red-600');
+                    window.profileStatus.classList.add('text-green-600');
+                } else {
+                    console.log("No profile found, initializing empty profile.");
+                    window.userProfile = null;
+                    window.profileStatus.textContent = 'No Profile Set';
+                    window.profileStatus.classList.add('text-yellow-600');
+                }
+            } catch (error) {
+                console.error("Error loading profile:", error);
+                window.profileStatus.textContent = 'Error Loading Profile';
+                window.profileStatus.classList.add('text-red-600');
+            }
+
+            // After auth and profile are ready, start the main app logic
+            // FIX: Call the global version of initMainApp defined in the second script
+            if (window.initMainApp) {
+                window.initMainApp();
+            } else {
+                console.error("window.initMainApp is not yet defined.");
+            }
+        }
+
+        /**
+         * Saves the user profile to Firestore.
+         * @param {Event} event - The form submit event.
+         */
+        window.saveUserProfile = async function (event) {
+            event.preventDefault();
+            
+            const firstName = window.profileNameInput.value.trim();
+            const age = parseInt(window.profileAgeInput.value.trim(), 10);
+            const careerField = window.profileCareerInput.value.trim();
+
+            if (!window.currentUserId) {
+                window.profileStatus.textContent = 'Error: Not Authenticated';
+                window.profileStatus.classList.add('text-red-600');
+                return;
+            }
+
+            // Simple validation
+            if (!firstName || isNaN(age) || age < 1 || !careerField) {
+                 window.profileStatus.textContent = 'Please fill all fields with valid data.';
+                 window.profileStatus.classList.add('text-red-600');
+                 return;
+            }
+
+            const profileData = { firstName, age, careerField, lastUpdated: new Date().toISOString() };
+            const profileRef = doc(db, "artifacts", window.currentAppId, "users", window.currentUserId, "profile", "data");
+
+            try {
+                await setDoc(profileRef, profileData);
+                window.userProfile = profileData;
+                window.profileStatus.textContent = 'Profile Saved Successfully! Reloading Wisdom...';
+                window.profileStatus.classList.remove('text-red-600', 'text-yellow-600');
+                window.profileStatus.classList.add('text-green-600');
+                
+                // Re-run the summary generation with the new profile data using the current tab
+                if (window.generateDailyContent) {
+                    await window.generateDailyContent(window.currentTab); 
+                } else {
+                    console.error("window.generateDailyContent is not yet defined.");
+                }
+
+            } catch (error) {
+                console.error("Error saving profile:", error);
+                window.profileStatus.textContent = `Error Saving: ${error.message}`;
+                window.profileStatus.classList.add('text-red-600');
+            }
+        }
+        
+        // Call initialization right away
+        window.addEventListener('load', () => {
+             // Get references to elements
+            window.profileForm = document.getElementById('profile-form');
+            window.profileNameInput = document.getElementById('profile-name');
+            window.profileAgeInput = document.getElementById('profile-age');
+            window.profileCareerInput = document.getElementById('profile-career');
+            window.profileStatus = document.getElementById('profile-status');
+
+            // Attach form handler
+            if (window.profileForm) {
+                window.profileForm.addEventListener('submit', window.saveUserProfile);
+            }
+
+            // Start authentication flow
+            initializeAuthAndDatabase();
+        });
+
+
+    </script>
+
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Configure Tailwind for Inter font -->
@@ -13,6 +199,7 @@
                 extend: {
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
+                        serif: ['Georgia', 'serif'], // Added serif for quote
                     },
                 },
             },
@@ -35,131 +222,183 @@
     </style>
 </head>
 <body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans min-h-screen flex justify-center p-4 py-8">
+
     <div class="w-full max-w-2xl bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 md:p-12">
-        <h1 class="text-3xl md:text-4xl font-bold text-center text-blue-600 dark:text-blue-400 mb-6">
-            Daily Stoic Wisdom
+        
+        <h1 class="text-3xl md:text-4xl font-bold text-center text-blue-600 dark:text-blue-400 mb-6" id="main-app-title">
+            Daily Reflection App
         </h1>
 
-        <!-- Quote Section -->
-        <div class="mb-8">
-            <blockquote id="quote-text" class="text-xl md:text-2xl italic text-center text-gray-700 dark:text-gray-300 mb-4">
-                <!-- Quote will be populated here -->
-            </blockquote>
-            <p id="quote-author" class="text-xl md:text-2xl italic text-center text-gray-700 dark:text-gray-300 mb-4">
-                <!-- Author will be populated here -->
-            </p>
-        </div>
+        <!-- Tab Navigation -->
+        <nav class="flex justify-center border-b border-gray-300 dark:border-gray-700 mb-6">
+            <button id="tab-stoic" onclick="window.switchTab('stoic')" class="flex-1 py-3 text-sm md:text-base font-semibold rounded-t-lg transition duration-150 bg-indigo-600 text-white">
+                Daily Stoic Wisdom
+            </button>
+            <button id="tab-inspiration" onclick="window.switchTab('inspiration')" class="flex-1 py-3 text-sm md:text-base font-semibold rounded-t-lg transition duration-150 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">
+                Daily Inspiration
+            </button>
+            <button id="tab-lyric" onclick="window.switchTab('lyric')" class="flex-1 py-3 text-sm md:text-base font-semibold rounded-t-lg transition duration-150 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">
+                Daily Lyric Insight
+            </button>
+        </nav>
+        
+        <!-- Main Content Wrapper -->
+        <div id="content-wrapper">
 
-        <!-- Divider -->
-        <hr class="border-gray-200 dark:border-gray-700 my-8">
-
-        <!-- Summary Section -->
-        <div id="summary-container">
-            <h2 class="text-3xl md:text-4xl font-bold text-center text-blue-600 dark:text-blue-400 mb-6">
-                Modern Application
-            </h2>
-            
-            <!-- Loading State -->
-            <div id="loading-state" class="flex flex-col items-center justify-center space-y-4">
-                <div class="loader"></div>
-                <p class="text-gray-500 text-center dark:text-gray-400">Generating today's wisdom... this may take a moment.</p>
-            </div>
-
-            <!-- Error State -->
-            <div id="error-state" class="hidden p-4 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded-lg text-red-700 dark:text-red-200">
-                <p class="font-bold">Error</p>
-                <p id="error-message">Could not retrieve the summary. Please try refreshing the page.</p>
-            </div>
-
-            <!-- Content State -->
-            <div id="summary-content" class="hidden text-base md:text-lg text-gray-700 text-center dark:text-gray-300 space-y-4 leading-relaxed whitespace-pre-line">
-                <!-- Summary will be populated here -->
-            </div>
-        </div>
-
-        <!-- NEW: Divider for new tools -->
-        <hr id="tools-divider" class="border-gray-200 dark:border-gray-700 my-8 hidden">
-
-        <!-- NEW: Reflection Tools Section -->
-        <div id="reflection-tools" class="hidden">
-            <h2 class="text-3xl md:text-4xl font-bold text-center text-blue-600 dark:text-blue-400 mb-6">
-                Tools for Reflection
-            </h2>
-
-            <!-- Feature 1: Journal Prompt -->
-            <div class="mb-6">
-                <button id="journal-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed">
-                    <span>✨ Get Journal Prompt</span>
-                </button>
-                <div id="journal-loader" class="hidden flex justify-center mt-4">
-                    <div class="loader" style="width: 30px; height: 30px; border-width: 3px;"></div>
-                </div>
-                <div id="journal-error" class="hidden mt-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-200 rounded-lg"></div>
-                <div id="journal-content" class="hidden mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg italic text-gray-800 dark:text-gray-200 whitespace-pre-line">
-                    <!-- Journal prompt will appear here -->
-                </div>
-            </div>
-
-            <!-- Feature 2: Ask a Question -->
-            <div>
-                <button id="ask-btn" class="w-full bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100 font-bold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center space-x-2">
-                    <span>✨ Ask a Follow-up Question</span>
-                </button>
+            <!-- Profile Section -->
+            <div class="mb-8 p-4 border border-2 border-indigo-200 dark:border-indigo-700 rounded-lg">
+                <h2 class="text-xl font-bold mb-4 text-center">Your Profile (Optional for Personalization)</h2>
+                <p class="text-sm mb-4 text-gray-500 dark:text-gray-400">
+                    User ID: <span id="user-id-display" class="font-mono text-xs bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded break-all">Loading...</span> 
+                    Status: <span id="profile-status" class="font-semibold text-yellow-600">Initializing...</span>
+                </p>
                 
-                <form id="question-form" class="hidden space-y-4 mt-4">
-                    <label for="question-input" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Your Question:</label>
-                    <input type="text" id="question-input" class="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., How does this apply to family?">
-                    <button id="submit-question-btn" type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed">
-                        <span>Submit Question</span>
+                <form id="profile-form" class="space-y-4">
+                    <input type="text" id="profile-name" placeholder="First Name" required class="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <div class="flex space-x-4">
+                        <input type="number" id="profile-age" placeholder="Age" required class="w-1/3 p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <input type="text" id="profile-career" placeholder="Career Field (e.g., Software Engineer)" required class="w-2/3 p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
+                        Save Profile & Personalize Content
                     </button>
                 </form>
+            </div>
+            
+            <!-- Divider -->
+            <hr class="border-gray-200 dark:border-gray-700 my-8">
 
-                <div id="question-loader" class="hidden flex justify-center mt-4">
-                    <div class="loader" style="width: 30px; height: 30px; border-width: 3px;"></div>
+            <!-- Quote Section -->
+            <div class="mb-8">
+                <blockquote id="quote-text" class="text-xl md:text-2xl italic text-center text-gray-700 dark:text-gray-300 mb-4 font-serif">
+                    <!-- Quote will be populated here -->
+                </blockquote>
+                <p id="quote-author" class="text-center text-xl font-bold italic text-gray-700 dark:text-gray-300 font-serif">
+                    <!-- Author will be populated here -->
+                </p>
+            </div>
+
+            <!-- Divider -->
+            <hr class="border-gray-200 dark:border-gray-700 my-8">
+
+            <!-- Summary Section -->
+            <div id="summary-container">
+                <!-- Header matching the main title -->
+                <h2 class="text-3xl md:text-4xl font-bold text-center text-blue-600 dark:text-blue-400 mb-6" id="summary-header">
+                    <!-- Populated by JS -->
+                </h2>
+                
+                <!-- Loading State -->
+                <div id="loading-state" class="flex flex-col items-center justify-center space-y-4">
+                    <div class="loader"></div>
+                    <p class="text-gray-500 dark:text-gray-400">Loading profile and generating today's wisdom...</p>
                 </div>
-                <div id="question-error" class="hidden mt-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-200 rounded-lg"></div>
-                <div id="question-answer" class="hidden mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg text-gray-800 dark:text-gray-200 whitespace-pre-line">
-                    <!-- Question answer will appear here -->
+
+                <!-- Error State -->
+                <div id="error-state" class="hidden p-4 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded-lg text-red-700 dark:text-red-200">
+                    <p class="font-bold">Error</p>
+                    <p id="error-message">Could not retrieve the summary. Please try refreshing the page.</p>
+                </div>
+
+                <!-- Content State -->
+                <div id="summary-content" class="hidden text-base md:text-lg text-gray-700 dark:text-gray-300 space-y-4 leading-relaxed whitespace-pre-line">
+                    <!-- Summary will be populated here -->
                 </div>
             </div>
-        </div>
+
+            <!-- Divider for new tools -->
+            <hr id="tools-divider" class="border-gray-200 dark:border-gray-700 my-8 hidden">
+
+            <!-- Reflection Tools Section -->
+            <div id="reflection-tools" class="hidden">
+                <h2 class="text-3xl md:text-4xl font-bold text-center text-blue-600 dark:text-blue-400 mb-6">
+                    Tools for Reflection
+                </h2>
+
+                <!-- Feature 1: Journal Prompt -->
+                <div class="mb-6">
+                    <button id="journal-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <span>✨ Get Journal Prompt</span>
+                    </button>
+                    <div id="journal-loader" class="hidden flex justify-center mt-4">
+                        <div class="loader" style="width: 30px; height: 30px; border-width: 3px;"></div>
+                    </div>
+                    <div id="journal-error" class="hidden mt-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-200 rounded-lg"></div>
+                    <div id="journal-content" class="hidden mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg italic text-gray-800 dark:text-gray-200 whitespace-pre-line">
+                        <!-- Journal prompt will appear here -->
+                    </div>
+                </div>
+
+                <!-- Feature 2: Ask a Question -->
+                <div>
+                    <button id="ask-btn" class="w-full bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100 font-bold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center space-x-2">
+                        <span>✨ Ask a Follow-up Question</span>
+                    </button>
+                    
+                    <form id="question-form" class="hidden space-y-4 mt-4">
+                        <label for="question-input" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Your Question:</label>
+                        <input type="text" id="question-input" class="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., How can I apply this to my job?">
+                        <button id="submit-question-btn" type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed">
+                            <span>Submit Question</span>
+                        </button>
+                    </form>
+
+                    <div id="question-loader" class="hidden flex justify-center mt-4">
+                        <div class="loader" style="width: 30px; height: 30px; border-width: 3px;"></div>
+                    </div>
+                    <div id="question-error" class="hidden mt-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-200 rounded-lg"></div>
+                    <div id="question-answer" class="hidden mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg text-gray-800 dark:text-gray-200 whitespace-pre-line">
+                        <!-- Question answer will appear here -->
+                    </div>
+                </div>
+            </div>
+
+        </div> <!-- End Content Wrapper -->
     </div>
 
     <script type="module">
         // --- Configuration ---
 
-        // A list of Stoic quotes. The script will pick one based on the day of the year.
+        // --- Content Lists ---
         const STOIC_QUOTES = [
             { text: "The happiness of your life depends upon the quality of your thoughts.", author: "Marcus Aurelius" },
             { text: "We suffer more often in imagination than in reality.", author: "Seneca" },
             { text: "It's not what happens to you, but how you react to it that matters.", author: "Epictetus" },
             { text: "The best revenge is to be unlike him who performed the injury.", author: "Marcus Aurelius" },
-            { text: "He who fears death will never do anything worthy of a man who is alive.", author: "Seneca" },
-            { text: "First say to yourself what you would be; and then do what you have to do.", author: "Epictetus" },
             { text: "You have power over your mind – not outside events. Realize this, and you will find strength.", author: "Marcus Aurelius" },
-            { text: "Luck is what happens when preparation meets opportunity.", author: "Seneca" },
-            { text: "Wealth consists not in having great possessions, but in having few wants.", author: "Epictetus" },
-            { text: "Waste no more time arguing about what a good man should be. Be one.", author: "Marcus Aurelius" },
-            { text: "Difficulties strengthen the mind, as labor does the body.", author: "Seneca" },
-            { text: "No man is free who is not master of himself.", author: "Epictetus" },
-            { text: "If you are distressed by anything external, the pain is not due to the thing itself, but to your estimate of it; and this you have the power to revoke at any moment.", author: "Marcus Aurelius" },
-            { text: "It is not the man who has too little, but the man who craves more, that is poor.", author: "Seneca" },
-            { text: "We cannot choose our external circumstances, but we can always choose how we respond to them.", author: "Epictetus" }
+        ];
+
+        const INSPIRATIONAL_QUOTES = [
+            { text: "The only way to do great work is to love what you do.", author: "Steve Jobs" },
+            { text: "Believe you can and you're halfway there.", author: "Theodore Roosevelt" },
+            { text: "Success is not final, failure is not fatal: it is the courage to continue that counts.", author: "Winston Churchill" },
+            { text: "The future belongs to those who believe in the beauty of their dreams.", author: "Eleanor Roosevelt" },
+            { text: "Strive not to be a success, but rather to be of value.", author: "Albert Einstein" },
+        ];
+
+        const LYRIC_QUOTES = [
+            { text: "Yesterday's just a memory, tomorrow is never what it's supposed to be.", author: "Bob Dylan (Don't Think Twice, It's All Right)" },
+            { text: "You may say I'm a dreamer, but I'm not the only one.", author: "John Lennon (Imagine)" },
+            { text: "And in the end, the love you take is equal to the love you make.", author: "The Beatles (The End)" },
+            { text: "It's been a long time since I rock and rolled.", author: "Led Zeppelin (Rock and Roll)" },
+            { text: "The road less traveled is the road to be free.", author: "Eddie Vedder (Rise)" },
         ];
 
         // Gemini API Configuration
-        const API_KEY = "AIzaSyAcOSUPZRv0OvKhO_mIDKeSf9lmLqmodCA"; 
-        const MODEL_NAME = "gemini-2.5-flash-lite-preview-09-2025";
+        // NOTE: The API_KEY must be a valid, restricted key for the app to function.
+        // ******* ACTION REQUIRED: FILL IN YOUR API KEY HERE *******
+        const API_KEY = ""; 
+        const MODEL_NAME = "gemini-2.5-flash-preview-09-2025";
         const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
         
-        // Module-level variable to store the quote
+        // --- Global State ---
         let currentDailyQuote = null;
+        window.currentTab = 'stoic'; // Default tab
 
         // --- Helper Functions ---
 
         /**
-         * Calculates the day of the year (1-366).
-         * @returns {number} The current day of the year.
+         * Calculates the day of the year for quote selection.
          */
         function getDayOfYear() {
             const now = new Date();
@@ -171,12 +410,9 @@
 
         /**
          * Retries a fetch request with exponential backoff.
-         * @param {function} fetchCall - A function that returns the fetch promise.
-         * @param {number} maxRetries - Maximum number of retries.
-         * @returns {Promise<Response>}
          */
         async function retryWithExponentialBackoff(fetchCall, maxRetries = 5) {
-            let delay = 1000; // 1 second
+            let delay = 1000; 
             for (let i = 0; i < maxRetries; i++) {
                 try {
                     const response = await fetchCall();
@@ -184,10 +420,14 @@
                         return response;
                     }
                     if (response.status >= 400 && response.status < 500) {
+                        // Check for 403 Forbidden specifically (key restriction error)
+                        if (response.status === 403) {
+                             throw new Error(`Client error: 403 Forbidden. Check your API key restrictions in the Google Cloud Console.`);
+                        }
                         throw new Error(`Client error: ${response.status} ${response.statusText}`);
                     }
                 } catch (error) {
-                    if (i === maxRetries - 1) throw error;
+                    if (error.message.includes('403 Forbidden') || i === maxRetries - 1) throw error;
                 }
                 await new Promise(resolve => setTimeout(resolve, delay * (2 ** i)));
             }
@@ -196,9 +436,6 @@
 
         /**
          * Generic function to call the Gemini API
-         * @param {string} systemPrompt - The system instruction
-         * @param {string} userQuery - The user's prompt
-         * @returns {Promise<string>} The generated text
          */
         async function callGeminiAPI(systemPrompt, userQuery) {
             const payload = {
@@ -244,35 +481,62 @@
         }
 
         /**
-         * Fetches the Stoic summary from the Gemini API.
-         * @param {object} quote - The quote object ({ text, author }).
-         * @returns {Promise<string>} The generated summary text.
+         * Fetches the personalized content based on the current tab.
          */
-        async function getStoicSummary(quote) {
-            const systemPrompt = "You are a philosopher skilled in Stoicism and modern psychology.";
-            const userQuery = `Here is a stoic quote: "${quote.text}" - ${quote.author}.
+        async function getDailySummary(quote, contentType) {
+            let systemPrompt;
+            let theme;
             
-Please provide a summary of how this quote applies to the world today.
-The summary MUST follow these strict rules:
+            switch (contentType) {
+                case 'stoic':
+                    systemPrompt = "You are a philosopher skilled in Stoicism and modern psychology.";
+                    theme = "summary of how this quote applies to the world today.";
+                    break;
+                case 'inspiration':
+                    systemPrompt = "You are a motivational coach and success strategist.";
+                    theme = "analysis of how this quote can be applied to achieving personal and professional goals.";
+                    break;
+                case 'lyric':
+                    systemPrompt = "You are a literary critic and music analyst.";
+                    theme = "explanation of the deeper meaning and emotional truth of this lyric in the context of modern experience.";
+                    break;
+                default:
+                    throw new Error("Invalid content type for summary generation.");
+            }
+            
+            let personalization = "Provide a general summary for any reader.";
+
+            if (window.userProfile && window.userProfile.age && window.userProfile.careerField) {
+                 personalization = `The user is a ${window.userProfile.age} year old person working in the field of ${window.userProfile.careerField}. Please tailor the application to address their specific life stage and career challenges.`;
+            }
+
+            const userQuery = `Here is a quote/lyric: "${quote.text}" - ${quote.author}.
+            
+${personalization}
+            
+Please provide a ${theme}
+The response MUST follow these strict rules:
 1.  It must contain exactly two paragraphs.
 2.  Each paragraph must contain exactly two sentences.
-3.  The content should focus on modern, everyday challenges (like work stress or social media).
+3.  The content should focus on modern, everyday challenges.
 4.  Do not include any greeting or text other than the summary.`;
             
-            // Use the generic API caller
             return callGeminiAPI(systemPrompt, userQuery);
         }
 
         /**
          * Updates the DOM with the main summary.
-         * @param {string} summary - The generated summary.
          */
-        function displaySummary(summary) {
+        function displaySummary(summary, header) {
+            // Update the dynamic header
+            document.getElementById('summary-header').textContent = header;
+
             // Populate summary
             document.getElementById('summary-content').textContent = summary;
 
             // Show content and hide loader
             document.getElementById('loading-state').classList.add('hidden');
+            document.getElementById('error-state').classList.add('hidden');
             document.getElementById('summary-content').classList.remove('hidden');
 
             // Show the reflection tools
@@ -282,15 +546,56 @@ The summary MUST follow these strict rules:
 
         /**
          * Displays an error message in the main summary UI.
-         * @param {Error} error - The error object.
          */
         function displayError(error) {
-            document.getElementById('error-message').textContent = `Failed to generate wisdom: ${error.message}. Please try refreshing the page.`;
+            let message = error.message;
+
+            if (message.includes('403 Forbidden') || message.includes('API Key Missing')) {
+                message = "The Gemini API Key is missing or invalid. Please update the API_KEY variable in the code to your valid, restricted key.";
+            } else if (message.includes('API returned an unexpected response')) {
+                message = "The AI service is unavailable or returned unexpected content. Please try again later.";
+            }
+
+            document.getElementById('error-message').textContent = message;
             document.getElementById('loading-state').classList.add('hidden');
             document.getElementById('error-state').classList.remove('hidden');
+
+            // Hide tools on error
+            document.getElementById('tools-divider').classList.add('hidden');
+            document.getElementById('reflection-tools').classList.add('hidden');
         }
 
-        // --- New Feature Handlers ---
+        // --- Tab Management ---
+
+        /**
+         * Switches the active tab and regenerates content for the new tab.
+         */
+        window.switchTab = function (newTab) {
+            if (window.currentTab === newTab) return;
+
+            // 1. Update UI (Active tab button styling)
+            document.getElementById(`tab-${window.currentTab}`).classList.remove('bg-indigo-600', 'text-white');
+            document.getElementById(`tab-${window.currentTab}`).classList.add('bg-gray-200', 'dark:bg-gray-700');
+
+            document.getElementById(`tab-${newTab}`).classList.remove('bg-gray-200', 'dark:bg-gray-700');
+            document.getElementById(`tab-${newTab}`).classList.add('bg-indigo-600', 'text-white');
+
+            // 2. Update state and regenerate content
+            window.currentTab = newTab;
+            
+            // 3. Reset all reflection tools
+            document.getElementById('question-form').classList.add('hidden');
+            document.getElementById('ask-btn').classList.remove('hidden');
+            document.getElementById('question-answer').classList.add('hidden');
+            document.getElementById('journal-content').classList.add('hidden');
+            document.getElementById('journal-error').classList.add('hidden');
+            document.getElementById('question-error').classList.add('hidden');
+
+            window.generateDailyContent(window.currentTab);
+        }
+
+
+        // --- New Feature Handlers (Updated to use currentDailyQuote) ---
 
         /**
          * Handles the "Get Journal Prompt" button click.
@@ -309,7 +614,7 @@ The summary MUST follow these strict rules:
             errorContainer.classList.add('hidden');
 
             const systemPrompt = "You are a thoughtful and insightful journaling guide.";
-            const userQuery = `Based on the stoic quote "${currentDailyQuote.text}" by ${currentDailyQuote.author}, provide a single, short, and concise journal prompt. The prompt should be a direct question to help someone reflect on the quote. Start the prompt directly, with no preamble.`;
+            const userQuery = `Based on the content type: ${window.currentTab}, and the quote/lyric: "${currentDailyQuote.text}" by ${currentDailyQuote.author}, provide a single, short, and concise journal prompt. The prompt should be a direct question to help someone reflect on the content. Start the prompt directly, with no preamble.`;
 
             try {
                 const promptText = await callGeminiAPI(systemPrompt, userQuery);
@@ -359,12 +664,12 @@ The summary MUST follow these strict rules:
             container.classList.add('hidden');
             errorContainer.classList.add('hidden');
 
-            const systemPrompt = "You are a source of Stoic wisdom. Respond to the user's question from a Stoic perspective, without using personal pronouns like 'I' or addressing the user with terms like 'my friend'.";
-            const userQuery = `A person is reflecting on the quote "${currentDailyQuote.text}" by ${currentDailyQuote.author}. They ask:
+            const systemPrompt = "You are a source of profound wisdom related to the content type being discussed. Respond to the user's question, without using personal pronouns like 'I' or addressing the user with terms like 'my friend'.";
+            const userQuery = `The current topic is ${window.currentTab} based on the text "${currentDailyQuote.text}" by ${currentDailyQuote.author}. The user is asking the following question:
             
 "${questionText}"
 
-Provide a concise, helpful answer based on Stoic principles. The response should be wise and direct, avoiding any personal persona or conversational phrases.`;
+Provide a concise, helpful answer that reflects the theme of the current tab (Stoic, Inspirational, or Lyric insight). The response should be wise and direct, avoiding any personal persona or conversational phrases.`;
 
             try {
                 const answerText = await callGeminiAPI(systemPrompt, userQuery);
@@ -380,34 +685,80 @@ Provide a concise, helpful answer based on Stoic principles. The response should
             }
         }
 
+
         // --- Main Execution ---
 
-        document.addEventListener('DOMContentLoaded', async () => {
-            // Register new event listeners
+        /**
+         * Main function to run the app once auth and profile loading is complete.
+         */
+        window.initMainApp = async function initMainApp() {
+             // 1. Register event listeners for reflection tools
             document.getElementById('journal-btn').addEventListener('click', handleJournalPrompt);
             document.getElementById('ask-btn').addEventListener('click', handleAskQuestionReveal);
             document.getElementById('question-form').addEventListener('submit', handleSubmitQuestion);
 
+            // 2. Start the wisdom generation for the default tab
+            await window.generateDailyContent(window.currentTab);
+        }
+
+        /**
+         * Generates and displays the daily content based on the content type.
+         */
+        window.generateDailyContent = async function generateDailyContent(contentType) {
+            // Reset state
+            document.getElementById('loading-state').classList.remove('hidden');
+            document.getElementById('error-state').classList.add('hidden');
+            document.getElementById('summary-content').classList.add('hidden');
+            document.getElementById('tools-divider').classList.add('hidden');
+            document.getElementById('reflection-tools').classList.add('hidden');
+
+            // 1. Get the content list and header
+            let contentList;
+            let headerText;
+            switch (contentType) {
+                case 'stoic':
+                    contentList = STOIC_QUOTES;
+                    headerText = 'Daily Stoic Wisdom';
+                    break;
+                case 'inspiration':
+                    contentList = INSPIRATIONAL_QUOTES;
+                    headerText = 'Daily Inspiration';
+                    break;
+                case 'lyric':
+                    contentList = LYRIC_QUOTES;
+                    headerText = 'Daily Lyric Insight';
+                    break;
+                default:
+                    return; // Should not happen
+            }
+
+            // 2. Get the daily quote (synchronous, must run first)
+            const dayIndex = getDayOfYear();
+            currentDailyQuote = contentList[dayIndex % contentList.length]; // Store in module variable
+            document.getElementById('quote-text').textContent = `"${currentDailyQuote.text}"`;
+            document.getElementById('quote-author').textContent = `– ${currentDailyQuote.author}`;
+            document.getElementById('main-app-title').textContent = headerText; // Update main title to reflect the tab
+
+            
+            // 3. CHECK API KEY IMMEDIATELY
+            if (API_KEY === "") {
+                 const keyError = new Error("API Key Missing: Please update the 'API_KEY' variable in the second script tag of index.html to your valid key.");
+                 displayError(keyError);
+                 return;
+            }
+
             try {
-                // 1. Get the daily quote
-                const dayIndex = getDayOfYear();
-                currentDailyQuote = STOIC_QUOTES[dayIndex % STOIC_QUOTES.length]; // Store in module variable
+                // 4. Fetch the personalized summary from the Gemini API
+                const summary = await getDailySummary(currentDailyQuote, contentType);
 
-                // 2. Display the quote text immediately
-                document.getElementById('quote-text').textContent = `"${currentDailyQuote.text}"`;
-                document.getElementById('quote-author').textContent = `– ${currentDailyQuote.author}`;
-
-                // 3. Fetch the summary from the Gemini API
-                const summary = await getStoicSummary(currentDailyQuote);
-
-                // 4. Display the summary
-                displaySummary(summary);
+                // 5. Display the summary
+                displaySummary(summary, headerText);
 
             } catch (error) {
-                // 5. Handle any errors during the process
+                // 6. Handle any errors during the process
                 displayError(error);
             }
-        });
+        }
     </script>
 </body>
 </html>
